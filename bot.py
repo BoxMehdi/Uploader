@@ -79,3 +79,17 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+if __name__ == "__main__":
+    import asyncio
+    from scheduler import scheduler
+
+    async def main():
+        scheduler.start()
+        await app.start()
+        print("✅ Bot is running...")
+        await idle()
+        await app.stop()
+
+    asyncio.run(main())
+
