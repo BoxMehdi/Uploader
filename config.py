@@ -12,4 +12,5 @@ ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS").split(",")))
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
 
-REQUIRED_CHANNELS = list(map(int, os.getenv("REQUIRED_CHANNELS").split(",")))
+REQUIRED_CHANNELS = os.getenv("REQUIRED_CHANNELS").split(",")
+
