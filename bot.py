@@ -1,3 +1,4 @@
+bot.run()
 import asyncio, logging
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
