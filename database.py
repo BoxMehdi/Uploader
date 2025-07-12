@@ -1,36 +1,30 @@
-from pymongo import MongoClient
-from config import MONGO_URI, MONGO_DB
+import pymongo
+from config import MONGO_URI
 
 class MongoDBClient:
     def __init__(self):
-        self.client = MongoClient(MONGO_URI)
-        self.db = self.client[MONGO_DB]
-        self.files_col = self.db["files"]
-        self.stats_col = self.db["stats"]
+        self.client = pymongo.MongoClient(MONGO_URI)
+        self.db = self.client["boxoffice"]
+        self.files = self.db["files"]
+        self.users = self.db["users"]
 
-    def save_file(self, film_id, file_id, quality, caption):
-        if self.files_col.find_one({"film_id": film_id,"file_id": file_id}):
-            return False
-        self.files_col.insert_one({
+    def save_file(self, film_id, file_id, caption, channel):
+        self.files.insert_one({
             "film_id": film_id,
             "file_id": file_id,
-            "quality": quality,
-            "caption": caption
+            "caption": caption,
+            "channel": channel,
+            "views": 0
         })
-        self.stats_col.update_one(
-            {"film_id": film_id},
-            {"$setOnInsert":{"views":0,"downloads":0,"shares":0}},
-            upsert=True
-        )
-        return True
 
     def get_files(self, film_id):
-        return list(self.files_col.find({"film_id": film_id}))
+        return list(self.files.find({"film_id": film_id}))
 
-    def increment(self, film_id, stat_type):
-        if stat_type in ["views","downloads","shares"]:
-            self.stats_col.update_one({"film_id":film_id}, {"$inc":{stat_type:1}})
+    def increment_views(self, film_id):
+        self.files.update_many({"film_id": film_id}, {"$inc": {"views": 1}})
 
-    def get_stats(self, film_id):
-        s = self.stats_col.find_one({"film_id":film_id})
-        return {"views": s.get("views",0), "downloads": s.get("downloads",0), "shares": s.get("shares",0)} if s else {"views":0,"downloads":0,"shares":0}
+    def has_seen_welcome(self, user_id):
+        return self.users.find_one({"_id": user_id}) is not None
+
+    def mark_seen(self, user_id):
+        self.users.insert_one({"_id": user_id})
