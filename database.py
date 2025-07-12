@@ -1,12 +1,14 @@
 import pymongo
-from config import MONGO_URI
+from config import MONGO_URI, MONGO_DB
 
 class MongoDBClient:
     def __init__(self):
         self.client = pymongo.MongoClient(MONGO_URI)
-        self.db = self.client["boxoffice"]
+        self.db = self.client[MONGO_DB]
         self.files = self.db["files"]
         self.users = self.db["users"]
+
+    # بقیه توابع بدون تغیی
 
     def save_file(self, film_id, file_id, caption, channel):
         self.files.insert_one({
