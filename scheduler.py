@@ -1,13 +1,16 @@
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
-import pytz
+import asyncio
 
-scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Berlin"))
+scheduler = AsyncIOScheduler()
 scheduler.start()
 
-def schedule_post(app, film_id, file_id, caption, time_str, channel_username):
-    def job():
-        app.send_document(channel_username, file_id, caption=caption)
+def schedule_post(client, film_id, file_id, caption, schedule_time_str, channel_username):
+    dt = datetime.strptime(schedule_time_str, "%Y-%m-%d %H:%M")
+    
+    async def job():
+        msg = await client.send_document(channel_username, file_id, caption=caption)
+        await asyncio.sleep(30)
+        await msg.delete()
 
-    dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M")
-    scheduler.add_job(job, "date", run_date=dt)
+    scheduler.add_job(lambda: asyncio.create_task(job()), 'date', run_date=dt)
