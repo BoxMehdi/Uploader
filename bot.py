@@ -117,3 +117,4 @@ async def recheck_subscription(client, callback):
         await callback.answer("❗️ هنوز عضو نشدی! لطفاً اول عضو شو.", show_alert=True)
 
 idle()
+app.run()
