@@ -7,34 +7,40 @@ from scheduler import schedule_post
 from keep_alive import keep_alive
 import asyncio
 import time
+import threading
 
 app = Client("BoxOfficeUploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 db = MongoDBClient()
-keep_alive()
+
+# اجرای Flask روی ترد جداگانه برای UptimeRobot
+threading.Thread(target=keep_alive).start()
 
 @app.on_message(filters.private & filters.user(ADMINS) & filters.document)
 async def upload_file(client, message: Message):
     file_id = message.document.file_id
     await message.reply("🔢 لطفاً شناسه فیلم (filmID) را وارد کنید:")
     film_id_msg = await client.listen(message.chat.id)
-    film_id = film_id_msg.text
+    film_id = film_id_msg.text.strip()
 
     await message.reply("📝 لطفاً کپشن فیلم را وارد کنید:")
     caption_msg = await client.listen(message.chat.id)
-    caption = caption_msg.text
+    caption = caption_msg.text.strip()
 
     await message.reply("🕰 زمان ارسال را وارد کنید (مثلاً 2025-07-11 18:00):")
     time_msg = await client.listen(message.chat.id)
-    schedule_time = time_msg.text
+    schedule_time = time_msg.text.strip()
 
     await message.reply("🎯 کانال مقصد را وارد کنید (مثلاً @BoxOffice_Irani):")
     channel_msg = await client.listen(message.chat.id)
-    channel_username = channel_msg.text
+    channel_username = channel_msg.text.strip()
 
     db.save_file(film_id, file_id, caption, channel_username)
-
     schedule_post(app, film_id, file_id, caption, schedule_time, channel_username)
-    await message.reply(f"✅ ذخیره شد و در زمان تعیین‌شده پست خواهد شد.\n🔗 لینک: https://t.me/{BOT_USERNAME}?start={film_id}")
+
+    await message.reply(
+        f"✅ ذخیره شد و در زمان تعیین‌شده پست خواهد شد.\n"
+        f"🔗 لینک: https://t.me/{BOT_USERNAME}?start={film_id}"
+    )
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
@@ -53,7 +59,10 @@ async def start(client, message: Message):
             return
 
         if not db.has_seen_welcome(user_id):
-            await message.reply_photo("https://example.com/welcome.jpg", caption="🎬 به ربات خوش آمدید!")
+            await message.reply_photo(
+                "https://example.com/welcome.jpg",
+                caption="🎬 به ربات خوش آمدید!"
+            )
             db.mark_seen(user_id)
 
         files = db.get_files(film_id)
@@ -79,4 +88,4 @@ async def checksub(client, callback):
     else:
         await callback.answer("هنوز عضو نشدی!", show_alert=True)
 
-idle()
+app.run()
