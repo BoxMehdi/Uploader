@@ -1,75 +1,82 @@
-bot.run()
-import asyncio, logging
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from config import API_ID, API_HASH, BOT_TOKEN, ADMIN_IDS
+from pyrogram import Client, filters, idle
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from config import *
+from check_subscription import check_user_subscribed
 from database import MongoDBClient
+from scheduler import schedule_post
+from keep_alive import keep_alive
+import asyncio
+import time
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+app = Client("BoxOfficeUploaderBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 db = MongoDBClient()
-app = Client("BoxOfficeBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+keep_alive()
 
-upload_sessions = {}
+@app.on_message(filters.private & filters.user(ADMINS) & filters.document)
+async def upload_file(client, message: Message):
+    file_id = message.document.file_id
+    await message.reply("🔢 لطفاً شناسه فیلم (filmID) را وارد کنید:")
+    film_id_msg = await client.listen(message.chat.id)
+    film_id = film_id_msg.text
 
-@app.on_message(filters.command("start") & filters.private)
-async def start_cmd(c, m):
-    await m.reply("سلام! ربات آنلاین و آماده‌ست 😊\nبرای آپلود فایل /upload را بزنید.")
+    await message.reply("📝 لطفاً کپشن فیلم را وارد کنید:")
+    caption_msg = await client.listen(message.chat.id)
+    caption = caption_msg.text
 
-@app.on_message(filters.command("upload") & filters.private & filters.user(ADMIN_IDS))
-async def start_upload(c, m):
-    upload_sessions[m.from_user.id] = {"film_id": None, "files": [], "phase": "awaiting_id"}
-    await m.reply("📌 شناسه (Film ID) فیلم را ارسال کن:")
+    await message.reply("🕰 زمان ارسال را وارد کنید (مثلاً 2025-07-11 18:00):")
+    time_msg = await client.listen(message.chat.id)
+    schedule_time = time_msg.text
 
-@app.on_message(filters.private & filters.media & filters.user(ADMIN_IDS))
-async def handle_media(c, m):
-    uid = m.from_user.id
-    sess = upload_sessions.get(uid)
-    if not sess or sess["phase"] != "awaiting_file":
-        return
-    fid = m.video.file_id if m.video else m.document.file_id
-    sess["files"].append({"file_id": fid, "quality": None, "caption": None})
-    sess["phase"] = "awaiting_quality"
-    await m.reply("کیفیت فایل؟ (مثلاً 720p)")
+    await message.reply("🎯 کانال مقصد را وارد کنید (مثلاً @BoxOffice_Irani):")
+    channel_msg = await client.listen(message.chat.id)
+    channel_username = channel_msg.text
 
-@app.on_message(filters.private & filters.text & filters.user(ADMIN_IDS))
-async def handle_text(c, m):
-    uid = m.from_user.id
-    sess = upload_sessions.get(uid)
-    if not sess: return
+    db.save_file(film_id, file_id, caption, channel_username)
 
-    txt = m.text.strip()
-    phase = sess["phase"]
+    schedule_post(app, film_id, file_id, caption, schedule_time, channel_username)
+    await message.reply(f"✅ ذخیره شد و در زمان تعیین‌شده پست خواهد شد.\n🔗 لینک: https://t.me/{BOT_USERNAME}?start={film_id}")
 
-    if phase == "awaiting_id":
-        sess["film_id"] = txt
-        sess["phase"] = "awaiting_file"
-        await m.reply("📁 فایل فیلم را ارسال کن:")
+@app.on_message(filters.command("start"))
+async def start(client, message: Message):
+    args = message.text.split(" ")
+    if len(args) == 2:
+        film_id = args[1]
+        user_id = message.from_user.id
 
-    elif phase == "awaiting_quality":
-        sess["files"][-1]["quality"] = txt
-        sess["phase"] = "awaiting_caption"
-        await m.reply("📝 کپشن فایل؟")
+        subscribed = await check_user_subscribed(client, user_id)
+        if not subscribed:
+            markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📣 عضویت در کانال‌ها", url="https://t.me/BoxOfficeMoviiie")],
+                [InlineKeyboardButton("✅ عضو شدم", callback_data=f"checksub_{film_id}")]
+            ])
+            await message.reply("📢 لطفاً اول در کانال‌های ما عضو شوید:", reply_markup=markup)
+            return
 
-    elif phase == "awaiting_caption":
-        sess["files"][-1]["caption"] = txt
-        sess["phase"] = "ask_more"
-        await m.reply("📌 آیا فایل دیگه برای این فیلم هست؟ (بله/خیر)")
+        if not db.has_seen_welcome(user_id):
+            await message.reply_photo("https://example.com/welcome.jpg", caption="🎬 به ربات خوش آمدید!")
+            db.mark_seen(user_id)
 
-    elif phase == "ask_more":
-        if txt.lower() in ["بله","yes","آره","اره"]:
-            sess["phase"] = "awaiting_file"
-            await m.reply("📁 فایل بعدی رو بفرست:")
-        elif txt.lower() in ["خیر","no","نه"]:
-            count = 0
-            for f in sess["files"]:
-                if db.save_file(sess["film_id"], f["file_id"], f["quality"], f["caption"]):
-                    count += 1
-            kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("دریافت🎬", callback_data=f"get:{sess['film_id']}")
-            ]])
-            await m.reply(f"✅ {count} فایل ذخیره شد.", reply_markup=kb)
-            upload_sessions.pop(uid, None)
-        else:
-            await m.reply("❗ فقط «بله» یا «خیر» بنویس.")
+        files = db.get_files(film_id)
+        sent = []
+        for file in files:
+            msg = await message.reply_document(file['file_id'], caption=file['caption'])
+            sent.append(msg)
+
+        warn = await message.reply("⚠️ این فایل‌ها بعد از ۳۰ ثانیه پاک می‌شن، حتماً ذخیره کنید.")
+        await asyncio.sleep(30)
+        for msg in sent + [warn]:
+            await msg.delete()
+
+        db.increment_views(film_id)
+
+@app.on_callback_query(filters.regex("checksub_"))
+async def checksub(client, callback):
+    film_id = callback.data.split("_")[1]
+    subscribed = await check_user_subscribed(client, callback.from_user.id)
+    if subscribed:
+        await callback.message.delete()
+        await start(client, callback.message)
+    else:
+        await callback.answer("هنوز عضو نشدی!", show_alert=True)
+
+idle()
