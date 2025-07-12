@@ -5,3 +5,4 @@ dnspython
 flask
 python-dotenv
 apscheduler
+pytz
