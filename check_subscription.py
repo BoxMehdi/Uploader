@@ -1,15 +1,14 @@
-from pyrogram.errors import UserNotParticipant
+import os
+from pyrogram import Client
 
-CHANNELS = ["@BoxOfficeMoviiie", "@BoxOffice_Irani", "@BoxOffice_Animation", "@BoxOfficeGoftegu"]
+CHANNEL_IDS = list(map(int, os.getenv("REQUIRED_CHANNELS").split(",")))
 
-async def check_user_subscribed(client, user_id):
-    for channel in CHANNELS:
+async def check_user_subscribed(client: Client, user_id: int) -> bool:
+    for ch_id in CHANNEL_IDS:
         try:
-            member = await client.get_chat_member(channel, user_id)
-            if member.status not in ("member", "administrator", "creator"):
+            member = await client.get_chat_member(ch_id, user_id)
+            if member.status not in ["member", "administrator", "creator"]:
                 return False
-        except UserNotParticipant:
-            return False
-        except Exception:
+        except:
             return False
     return True
